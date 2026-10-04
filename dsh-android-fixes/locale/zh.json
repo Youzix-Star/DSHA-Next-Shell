@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "安卓兼容修复",
+    "description": "把 DSH 在 Android/Termux 上的兼容修复做成可检测、可开关的插件：flock 会话锁降级、会话日志与附件 hardlink 兼容、app-boot 原生 addon 兼容、回车键=换行（5 项运行时可切换的文件补丁），外加编译目标、--allow-scripts、sharp wasm 回退、dsh 包装脚本、node-gyp NDK 路径（5 项安装期事实检测）。"
+  }
+}

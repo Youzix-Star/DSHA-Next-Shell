@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Android compatibility fixes",
+    "description": "The Android/Termux compatibility fixes for DSH as a switchable plugin: flock session-lock degradation, session-log and attachment hardlink compatibility, app-boot native addon compatibility, and Enter-as-newline (five runtime-toggleable file patches), plus compile target, --allow-scripts, sharp wasm fallback, dsh wrapper, and the node-gyp NDK path (five install-time fact checks)."
+  }
+}

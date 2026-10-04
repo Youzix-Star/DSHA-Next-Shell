@@ -1,0 +1,43 @@
+{
+  "name": "@dsha/dsh-android-fixes",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "description": "Android/Termux compatibility fixes for DSH as a switchable plugin: per-fix detection, per-fix toggles, explicit failure when upstream anchors move, and a settings page that reports every runtime patch and every install-time fact.",
+  "icon": "./icon.svg",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "src",
+    "tools",
+    "scripts",
+    "locale",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md"
+  ],
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "selftest": "node scripts/selftest.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": []
+    }
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

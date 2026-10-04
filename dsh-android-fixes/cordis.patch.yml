@@ -1,0 +1,10 @@
+# dsh-android-fixes bundle patch.
+#
+# One insert is the whole Host half; the browser half is bound to this row by the
+# package's own `dsh.client` declaration (a sub-path row would not carry it).
+#
+# The row's id is also the Client module id and the Settings page id, so the
+# Plugin Manager card, the settings nav entry and the module graph agree.
+- insert:
+    - id: dsh-android-fixes
+      name: '@dsha/dsh-android-fixes'

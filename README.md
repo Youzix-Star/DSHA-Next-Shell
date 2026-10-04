@@ -36,8 +36,43 @@ dsh web
 | sharp WebAssembly 回退 | android-arm64 无 libvips 原生包；0.1.x 里 sharp 是静态 import，加载失败会让整棵插件树加载失败 |
 | 回车键行为 | Android 输入法没有 Shift+Enter，默认「回车=发送」会误发消息；改为普通回车=换行，并设 `enterkeyhint=newline` 让输入法显示「换行」，发送走界面按钮 |
 | flock / hardlink 兼容 | 会话锁无 android 原生包 → 降级为无锁；Android 禁 `link(2)`，按各自语义改用 `rename` 或排他复制 |
+| 回车键行为（插件版） | 第 7、8 步的同锚点补丁现在由 [`dsh-android-fixes`](dsh-android-fixes/) 插件持有并逐项开关 |
 
 每一步的详细原因都写在 `install-dsh.sh` 的头部注释里。
+
+## 运行时补丁现在由插件持有
+
+`dsh-android-fixes/` 是一个 DSH 插件包，把安装脚本里「安装时改文件」的那几项兼容修复
+变成了**可检测、可开关、有说明**的注册表：Settings 里有独立一页，每项一个状态与一个
+开关（能切的）或一份检测结论（切不了的）；上游代码变动导致锚点失配时明确报错，而不是
+写出一个「只改了一半」的文件。
+
+安装（走官方流程，不要手写 profile 的 `package.json` / `cordis.patch.yml`）：
+
+```
+plugin_manager install_bundle   target: <仓库路径>/dsh-android-fixes
+```
+
+细节、调查记录与自测见 [`dsh-android-fixes/README.md`](dsh-android-fixes/README.md)。
+
+### 哪些步骤可以退役，哪些必须留给全新安装
+
+插件**必须在 dsh 已经能跑起来之后**才能安装（`plugin_manager` 是运行时服务），
+所以安装脚本里那一串「让 dsh 装得下、起得来」的步骤一个都不能删：
+
+| 步骤 | 全新安装 | 插件接管后 |
+|---|---|---|
+| 1 构建依赖 / 2 `common.gypi` / 3 编译与放行清单 | 必须 | 不适用（安装期事实，插件只检测） |
+| 4 `dsh` 包装脚本 | 必须 | 不适用（没有它 `dsh` 根本起不来） |
+| 5 app-boot 原生 addon | 必须 | 不适用（在启动路径上，`dsh` 起不来就装不了插件） |
+| 6 sharp wasm 回退 | 必须 | 不适用（要拷包，运行时做不了） |
+| 7 flock / hardlink 运行时补丁 | 必须（**首次**启动就要用） | **可以退役**：插件持有同锚点的补丁，可逐项开关，并在升级 dsh 后按用户选择重新应用 |
+| 8 回车键行为 | 可选 | **可以退役**：插件里是 `composer-enter` 一项，装完就能开 |
+
+也就是说：`install-dsh.sh` 仍然是**引导程序**（bootstrap），负责把 dsh 装到能启动；
+它的第 7、8 步从此只是「首次安装时先把 dsh 修到能跑」的权宜之计，之后的所有权在插件
+手里。想彻底退役第 7、8 步，需要先给脚本加一个「装完自动装插件」的收尾步骤，否则
+首次启动仍然需要它们。
 
 ## 鸣谢
 
