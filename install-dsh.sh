@@ -2,8 +2,8 @@
 # =============================================================================
 # DSH 最简安装脚本 — Android / Termux
 # -----------------------------------------------------------------------------
-# 只安装原版 @deepseek-ai/dsh，不含任何功能改动：不装 sharp 回退、不打前端/回车
-# 补丁、不写启动停止脚本、不改权限模式配置、不切镜像源、不加移动端适配。
+# 只安装原版 @deepseek-ai/dsh，不含任何功能改动：不打前端/回车补丁、不写启动停止
+# 脚本、不做移动端适配、不切镜像源、不加 JS 性能补丁。
 #
 # 只保留「让原版在 Android 上装得下、起得来、跑得动一轮」的必需步骤：
 #   1. 构建依赖（只补缺失，绝不 pkg update）
@@ -14,22 +14,28 @@
 #      /usr；且 dsh 需 --expose-internals 才能读 Node 内部模块）
 #   5. app-boot 原生 addon 兼容（>= 0.1.6-alpha.2 改用 node-addon-require-builtin
 #      读内部模块，该 addon 无 android 预编译包、包内无 C++ 源码）
-#   6. Android 运行时兼容（>= 0.2.0 新增的两处硬性依赖）
-#      6a. flock 会话锁：node-addon-system 只有 darwin/linux 包，android 平台
+#   6. sharp WebAssembly 回退（android-arm64 无 libvips 原生包）。
+#      0.1.x 里 sharp 是静态 import —— 加载失败会让整棵插件树加载失败，dsh 根本
+#      起不来；0.2.x 改成惰性 require，只会让图片/附件功能失败。两种都要修。
+#   7. Android 运行时兼容
+#      7a. flock 会话锁：node-addon-system 只有 darwin/linux 包，android 平台
 #          门禁直接抛 ERR_FLOCK_UNSUPPORTED_PLATFORM，退化为无锁（等价 0.1.x）
-#      6b. hardlink：Android/部分 ROM 禁 link(2)（会话日志、附件发布 EACCES）
+#      7b. hardlink：Android/部分 ROM 禁 link(2)（会话日志、附件发布 EACCES）
 #          → 会话日志与 staged 附件用 rename；内容寻址的别名发布必须保留源对象，
 #            改用 COPYFILE_EXCL 而不是 rename（否则会删掉源对象）
 #
 # 用法：
 #   bash install-dsh.sh              # 装 latest
 #   bash install-dsh.sh 0.1.5-rc.3   # 装指定版本
+#
+# 装完建议先 termux-wake-lock 再 dsh web，否则实例会被 Android 后台回收。
 # =============================================================================
 set -euo pipefail
 
 info() { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 ok()   { printf '\033[1;32m[v]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[!]\033[0m %s\n' "$*"; }
+die()  { printf '\033[1;31m[x]\033[0m %s\n' "$*" >&2; exit 1; }
 
 DSH_VERSION="${1:-latest}"
 PKG="@deepseek-ai/dsh@${DSH_VERSION}"
@@ -37,10 +43,10 @@ NPM_PREFIX="${DSH_PREFIX:-$PREFIX}"          # DSH_PREFIX 仅用于测试/自定
 DSH_DIR="$NPM_PREFIX/lib/node_modules/@deepseek-ai/dsh"
 WRAPPER="$NPM_PREFIX/bin/dsh"
 
-# --------------------------------------------------------------- 1/7 构建依赖
+# --------------------------------------------------------------- 1/8 构建依赖
 # 只补齐缺失的包，绝不执行 pkg update：只刷新索引再装个别包会造成 libc++ 半升级，
 # 把已装好的 cmake/clang 变成 "CANNOT LINK EXECUTABLE ... cannot locate symbol"。
-info "1/7 检查构建依赖"
+info "1/8 检查构建依赖"
 MISSING=()
 for p in cmake clang make binutils pkg-config python nodejs libandroid-spawn; do
   dpkg -s "$p" >/dev/null 2>&1 || MISSING+=("$p")
@@ -51,14 +57,11 @@ if [ ${#MISSING[@]} -gt 0 ]; then
 else
   ok "  构建依赖已齐备"
 fi
-if ! cmake --version >/dev/null 2>&1; then
-  warn "cmake 无法运行（Termux 半升级常见故障）。请先执行 pkg upgrade 修好工具链，再重跑本脚本。"
-  exit 1
-fi
+cmake --version >/dev/null 2>&1 || die "cmake 无法运行（Termux 半升级常见故障）。请先执行 pkg upgrade 修好工具链，再重跑本脚本。"
 ok "  node $(node -v) / npm $(npm -v)"
 
-# --------------------------------------------------- 2/7 node-gyp headers 补丁
-info "2/7 准备 node-gyp headers（node-pty 构建需要，约 1 分钟）"
+# --------------------------------------------------- 2/8 node-gyp headers 补丁
+info "2/8 准备 node-gyp headers（node-pty 构建需要，约 1 分钟）"
 timeout 300 npx --yes node-gyp install >/dev/null 2>&1 || warn "node-gyp install 未完成，继续"
 NODE_VER="$(node -v | sed 's/^v//')"
 GYP="$HOME/.cache/node-gyp/$NODE_VER/include/node/common.gypi"
@@ -76,8 +79,8 @@ else
   warn "  未找到 $GYP，node-pty 可能编译失败"
 fi
 
-# ------------------------------------------------------------------- 3/7 安装
-info "3/7 安装 $PKG（含原生编译，约 2~10 分钟，请勿中断）"
+# ------------------------------------------------------------------- 3/8 安装
+info "3/8 安装 $PKG（含原生编译，约 2~10 分钟，请勿中断）"
 CFLAGS="-target aarch64-linux-android30" CXXFLAGS="-target aarch64-linux-android30" \
   npm install -g --prefix "$NPM_PREFIX" \
   --allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs \
@@ -85,8 +88,8 @@ CFLAGS="-target aarch64-linux-android30" CXXFLAGS="-target aarch64-linux-android
 INSTALLED="$(node -p "require('$DSH_DIR/package.json').version")"
 ok "  已安装 @deepseek-ai/dsh@$INSTALLED"
 
-# ------------------------------------------------------------ 4/7 包装脚本
-info "4/7 生成 $WRAPPER"
+# ------------------------------------------------------------ 4/8 包装脚本
+info "4/8 生成 $WRAPPER"
 rm -f "$WRAPPER"
 cat > "$WRAPPER" <<EOF
 #!/data/data/com.termux/files/usr/bin/sh
@@ -95,8 +98,8 @@ EOF
 chmod +x "$WRAPPER"
 ok "  包装脚本就位（含 --expose-internals）"
 
-# -------------------------------------------------------- 5/7 原生 addon 兼容
-info "5/7 app-boot 原生 addon 兼容"
+# -------------------------------------------------------- 5/8 原生 addon 兼容
+info "5/8 app-boot 原生 addon 兼容"
 PATCHED=0
 for f in "$DSH_DIR/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js" \
          "$DSH_DIR/node_modules/@deepseek-ai/dsh-app-boot/lib/worker/profile-resolution-bootstrap.js"; do
@@ -120,13 +123,38 @@ PY
 done
 [ "$PATCHED" = 1 ] && ok "  已改回 --expose-internals 路径" || ok "  该版本不依赖该 addon，无需处理"
 
-# ----------------------------------------------------- 6/7 Android 运行时兼容
-info "6/7 Android 运行时兼容补丁（flock / hardlink）"
+# ------------------------------------------------------- 6/8 sharp wasm 回退
+# android-arm64 没有 libvips 原生包，sharp 必然加载失败。0.1.x 里它是静态 import，
+# 失败会让插件树整体加载失败 → dsh 完全起不来；0.2.x 是惰性 require，只影响图片功能。
+info "6/8 sharp WebAssembly 回退"
+SHARP_PKG="$DSH_DIR/node_modules/sharp"
+if [ ! -d "$SHARP_PKG" ]; then
+  ok "  该版本无 sharp，跳过"
+elif [ -d "$DSH_DIR/node_modules/@img/sharp-wasm32" ]; then
+  ok "  sharp-wasm32 已就位"
+else
+  SHARP_VER="$(node -p "require('$SHARP_PKG/package.json').version")"
+  W="$(mktemp -d)"
+  ( cd "$W" && npm init -y >/dev/null 2>&1 \
+    && npm install "@img/sharp-wasm32@$SHARP_VER" --no-fund --no-audit >/dev/null 2>&1 ) \
+    || warn "  sharp-wasm32 下载失败（图片/附件功能将不可用）"
+  mkdir -p "$DSH_DIR/node_modules/@img"
+  cp -r "$W/node_modules/@img/sharp-wasm32" "$DSH_DIR/node_modules/@img/" 2>/dev/null || true
+  cp -r "$W/node_modules/@emnapi" "$DSH_DIR/node_modules/" 2>/dev/null || true
+  rm -rf "$W"
+  node -e "require('$SHARP_PKG')" >/dev/null 2>&1 \
+    && ok "  sharp-wasm32@$SHARP_VER 已就位" \
+    || warn "  sharp 仍无法加载（图片/附件功能将不可用）"
+fi
+
+# ----------------------------------------------------- 7/8 Android 运行时兼容
+info "7/8 Android 运行时兼容补丁（flock / hardlink）"
 python3 - "$DSH_DIR" <<'PY'
 import io, os, sys
 
 root = sys.argv[1]
 NM = os.path.join(root, 'node_modules')
+failures = []
 
 def edit(path, pairs):
     rel = os.path.relpath(path, NM)
@@ -138,12 +166,14 @@ def edit(path, pairs):
     for old, new in pairs:
         n = s.count(old)
         if n != 1:
-            print("  !! 模式匹配 %d 次，跳过: %s" % (n, rel)); return
+            # 文件在、但目标代码变了：不能静默放过，否则装出来的 dsh 跑不动
+            print("  !! 模式匹配 %d 次: %s" % (n, rel))
+            failures.append(rel); return
         s = s.replace(old, new)
     io.open(path, 'w', encoding='utf-8').write(s)
     print("  已修补:", rel)
 
-# 6a. flock 会话锁：android 无原生包 → 退化为无锁（等价 0.1.x，调用方仍做 inode 比对）
+# 7a. flock 会话锁：android 无原生包 → 退化为无锁（等价 0.1.x，调用方仍做 inode 比对）
 edit(NM + '/@deepseek-ai/node-addon-system/lib/flock.js', [(
 """export async function tryLockExclusive(fd) {
     const errno = await new Promise((resolve) => {
@@ -163,7 +193,7 @@ edit(NM + '/@deepseek-ai/node-addon-system/lib/flock.js', [(
         loadBinding().tryLock(fd, resolve);
     });""")])
 
-# 6b-1. 会话日志发布：原 link 前已做存在性检查 → rename 等价
+# 7b-1. 会话日志发布：原 link 前已做存在性检查 → rename 等价
 edit(NM + '/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js', [
  ('import { link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, stat, truncate } from "node:fs/promises";',
   'import { link, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rename, rm, stat, truncate } from "node:fs/promises";'),
@@ -187,7 +217,7 @@ edit(NM + '/@deepseek-ai/dsh-session-persistence-jsonl/lib/index.js', [
   '\t\t\tawait rename(tmp, finalPath); /* dsh-android */'),
 ])
 
-# 6b-2. 附件：别名发布必须保留源对象（用排他复制）；staged 发布随后即 unlink → rename
+# 7b-2. 附件：别名发布必须保留源对象（用排他复制）；staged 发布随后即 unlink → rename
 edit(NM + '/@deepseek-ai/dsh-attachment-local/lib/index.js', [
  ('import { chmod, link, mkdir, open, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";',
   'import { chmod, copyFile, link, mkdir, open, readFile, rename, rm, unlink, writeFile } from "node:fs/promises";'),
@@ -196,6 +226,10 @@ edit(NM + '/@deepseek-ai/dsh-attachment-local/lib/index.js', [
  ('\t\t\tawait link(staged.path, target);',
   '\t\t\tawait rename(staged.path, target); /* dsh-android: 紧随其后即 unlink(staged.path) */'),
 ])
+
+if failures:
+    print("  失败的目标（上游代码可能已变，请勿直接使用本次安装）:", ", ".join(failures))
+    sys.exit(1)
 PY
 
 # 语法自检：补丁必须不破坏模块
@@ -203,16 +237,19 @@ for f in "$DSH_DIR/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/i
          "$DSH_DIR/node_modules/@deepseek-ai/dsh-attachment-local/lib/index.js" \
          "$DSH_DIR/node_modules/@deepseek-ai/node-addon-system/lib/flock.js"; do
   [ -f "$f" ] || continue
-  node --check "$f" || { warn "  语法校验失败: $f"; exit 1; }
+  node --check "$f" || die "语法校验失败: $f"
 done
 ok "  兼容补丁完成并通过语法校验"
 
-# --------------------------------------------------------------------- 7/7 完成
-info "7/7 完成 🎉"
+# --------------------------------------------------------------------- 8/8 完成
+info "8/8 完成 🎉"
 "$WRAPPER" --version
+node -e "require('$DSH_DIR/node_modules/sharp')" >/dev/null 2>&1 \
+  && ok "sharp 可加载" || warn "sharp 不可加载（图片/附件功能受影响）"
 cat <<EOF
 
 启动：
+  termux-wake-lock        # 防止 Android 后台回收实例
   dsh web
 然后浏览器打开日志里带 token 的地址（默认 http://127.0.0.1:3080/?token=...）。
 API Key 在 Web UI 的 Models 页配置，或写入 ~/.dsh/.credentials.yaml。
@@ -220,13 +257,17 @@ API Key 在 Web UI 的 Models 页配置，或写入 ~/.dsh/.credentials.yaml。
 说明：
   - 只装原版，不做沙箱/权限/前端适配。Android 内核不给非特权 user namespace，
     bwrap/landlock 后端不可用，workspace-write 模式下 bash 工具会拒绝执行。
-    需要 bash 工具时，写入 ~/.dsh/cordis.patch.yml（home 级，覆盖所有 profile）：
+    推荐在启动前设置环境变量（0.2.x 上游支持，会同时设定 sandbox 与 approval）：
+        export DSH_PERMISSION_MODE=danger-full-access
+    要在配置层固定，则写 ~/.dsh/cordis.patch.yml（home 级，覆盖所有 profile）：
         - id: permission
           config:
             defaultPreset: danger-full-access
-    注意 0.2.x 起权限是 preset 体系，不要再单独覆盖 sandbox-policy 的 mode——
-    （danger-full-access + ask）恰好是保留的 auto preset 组合，会导致
-    permission 条目匹配不到 preset 而报 “composed sandbox and approval
-    defaults match no preset”。0.1.x 老写法才是 sandbox-policy/mode。
+    注意：不要只覆盖 sandbox-policy 的 mode。0.2.x 的 approval 默认值由同一个环境
+    变量推算，只改 sandbox 会组合出 (danger-full-access + ask) —— 恰好是保留的
+    auto preset 组合，导致 permission 条目 “did not activate” 并报
+    “composed sandbox and approval defaults match no preset”。
+  - 上游代码变动会让第 7 步的补丁失配，此时脚本会直接失败而不是装出一个跑不动的
+    dsh；遇到这种情况请换用已验证的版本。
   - 补丁内容全部列在本文件头部注释；升级 dsh 或 Node 后需重跑本脚本。
 EOF

@@ -14,6 +14,8 @@ bash install-dsh.sh 0.2.0-rc.2   # 安装指定版本
 装完启动：
 
 ```sh
+termux-wake-lock                              # 防 Android 后台回收实例
+export DSH_PERMISSION_MODE=danger-full-access # Android 无沙箱后端，放开后才能用 bash 工具
 dsh web
 ```
 
@@ -28,6 +30,7 @@ dsh web
 | `-target aarch64-linux-android30` | bionic 在 API 30 才声明 `statx()`，否则 koffi 编译失败 |
 | 重建 `dsh` 包装脚本 | npm 建的软链 shebang 是 `/usr/bin/env`，Android 无 `/usr`；且需 `--expose-internals` |
 | 原生 addon 兼容 | `node-addon-require-builtin` 无 android 预编译包、包内无 C++ 源码 |
+| sharp WebAssembly 回退 | android-arm64 无 libvips 原生包；0.1.x 里 sharp 是静态 import，加载失败会让整棵插件树加载失败 |
 | flock / hardlink 兼容 | 会话锁无 android 原生包 → 降级为无锁；Android 禁 `link(2)`，按各自语义改用 `rename` 或排他复制 |
 
 每一步的详细原因都写在 `install-dsh.sh` 的头部注释里。
