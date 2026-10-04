@@ -18,6 +18,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { MARKER, PATCH_ITEMS } from './patches.js'
 
@@ -179,12 +180,20 @@ export function inspectPatchItem(item, dshDir) {
 
 /* ------------------------------------------------------------------ writes */
 
-function snapshot(abs, rel) {
+/**
+ * Snapshot one file before it is written.
+ *
+ * Backups are content-addressed (`<name>.<sha256-16>.bak`) rather than
+ * timestamped: switching a fix on and off repeatedly then costs one backup per
+ * distinct byte image instead of one per write, and the same upstream file
+ * shared by two items is stored once.
+ */
+function snapshot(abs, rel, content) {
 	const dir = path.join(backupDir(), path.dirname(rel))
 	fs.mkdirSync(dir, { recursive: true })
-	const stamp = new Date().toISOString().replace(/[:.]/g, '-')
-	const copy = path.join(dir, `${path.basename(rel)}.${stamp}.bak`)
-	fs.copyFileSync(abs, copy)
+	const digest = createHash('sha256').update(content, 'utf8').digest('hex').slice(0, 16)
+	const copy = path.join(dir, `${path.basename(rel)}.${digest}.bak`)
+	if (!fs.existsSync(copy)) fs.copyFileSync(abs, copy)
 	return copy
 }
 
@@ -241,7 +250,7 @@ export function writePatchItem(item, dshDir, enabled) {
 	const done = []
 	try {
 		for (const step of plan) {
-			backups.push(snapshot(step.abs, step.rel))
+			backups.push(snapshot(step.abs, step.rel, step.before))
 			writeInPlace(step.abs, step.after)
 			done.push(step)
 		}

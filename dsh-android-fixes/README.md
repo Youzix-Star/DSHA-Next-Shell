@@ -118,7 +118,7 @@ android_compat { "action": "enable",  "id": "flock-session-lock" }
 | 路径 | 内容 |
 |---|---|
 | `$DSH_HOME/state/dsh-android-fixes/settings.json` | `autoReapplyOnStart` 与每项的用户意图 |
-| `$DSH_HOME/state/dsh-android-fixes/backups/<包>/<文件>.<时间戳>.bak` | 每次写入前的逐字节快照（第二道保险；还原本身不依赖它） |
+| `$DSH_HOME/state/dsh-android-fixes/backups/<包>/<文件>.<sha256前16位>.bak` | 按内容寻址的逐字节快照，同一个字节镜像只存一份（第二道保险；还原本身不依赖它） |
 
 文件本身就是状态的真相：磁盘上有补丁 = 已应用。用户意图只用于「升级后自动重新应用」，
 默认关闭。
