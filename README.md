@@ -71,8 +71,25 @@ plugin_manager install_bundle   target: <仓库路径>/dsh-android-fixes
 
 也就是说：`install-dsh.sh` 仍然是**引导程序**（bootstrap），负责把 dsh 装到能启动；
 它的第 7、8 步从此只是「首次安装时先把 dsh 修到能跑」的权宜之计，之后的所有权在插件
-手里。想彻底退役第 7、8 步，需要先给脚本加一个「装完自动装插件」的收尾步骤，否则
-首次启动仍然需要它们。
+手里。
+
+已经装好插件、只是**重跑脚本**（例如升级 dsh 之后）时，可以显式把第 7/8 步交出去：
+
+```sh
+DSH_SKIP_RUNTIME_PATCHES=1 bash install-dsh.sh
+```
+
+这个开关**不是**一个纯布尔值：脚本会先看 `$HOME/.dsh/profiles/*/package.json` 里有没有
+`dsh-android-fixes`，真找到接管方才跳过；没找到就告警，并照旧执行第 7/8 步（否则会话
+日志、附件和回车键都会坏）。第 5 步在启动路径上，任何情况下都保留。
+
+自动化回归：`bash tests/install-dsh-sandbox.sh` 在一个临时 prefix + 临时 HOME 里、用桩
+替换 `dpkg/pkg/cmake/npx/npm`，真跑三遍安装脚本，断言「默认全打」「没接管方时拒绝跳过」
+「有接管方时只跳过第 7/8 步」，并核对默认路径产出的字节与本机生产树完全一致。
+
+想彻底从全新安装里删掉第 7、8 步，还得给脚本加一个「装完自动装插件」的收尾步骤 ——
+但全新机器上 `~/.dsh/profiles/web` 要等第一次 `dsh web` 才存在，所以那一步不能放在
+安装脚本末尾，得放在首次启动之后。
 
 ## 鸣谢
 

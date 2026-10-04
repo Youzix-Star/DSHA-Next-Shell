@@ -26,9 +26,23 @@
 #   8. 回车键行为：普通回车=换行，Ctrl/Cmd+Enter 或界面发送按钮才发送；
 #      并给作曲区设 enterkeyhint=newline（Android 输入法没有 Shift+Enter）
 #
+# 运行时补丁的所有权：
+#   第 5、7、8 步的补丁现在由一个 DSH 插件持有 —— DSHA-Next/dsh-android-fixes
+#   （可逐项检测、逐项开关，升级 dsh 后可按用户选择重新应用）。
+#   但本脚本仍然是**引导程序**：全新安装必须先靠这些步骤把 dsh 修到能启动，
+#   插件才有机会被安装。所以三步默认全部保留。
+#   只有「插件确实已经装进某个 profile」时，才可以设
+#       DSH_SKIP_RUNTIME_PATCHES=1
+#   把第 7 步（flock / hardlink）与第 8 步（回车键）交给插件。第 5 步在启动
+#   路径上，任何情况下都保留。插件没装却设了这个变量时，脚本会告警并照旧执行
+#   第 7/8 步 —— 「跳过」必须由接管方证明，不能只凭一个开关。
+#
 # 用法：
 #   bash install-dsh.sh              # 装 latest
 #   bash install-dsh.sh 0.1.5-rc.3   # 装指定版本
+#   DSH_SKIP_RUNTIME_PATCHES=1 bash install-dsh.sh
+#                                    # 已装 dsh-android-fixes 插件时，第 7/8 步
+#                                    # 交给插件（插件没装则告警并照旧执行）
 #
 # 装完建议先 termux-wake-lock 再 dsh web，否则实例会被 Android 后台回收。
 # =============================================================================
@@ -149,8 +163,24 @@ else
     || warn "  sharp 仍无法加载（图片/附件功能将不可用）"
 fi
 
+# ------------------------------------ 第 7/8 步的所有权（详见文件头部注释）
+SKIP_RUNTIME_PATCHES=0
+if [ "${DSH_SKIP_RUNTIME_PATCHES:-0}" = 1 ]; then
+  if grep -qs 'dsh-android-fixes' "$HOME"/.dsh/profiles/*/package.json 2>/dev/null; then
+    SKIP_RUNTIME_PATCHES=1
+    ok "  已装 dsh-android-fixes 插件，第 7/8 步交给插件"
+  else
+    warn "  DSH_SKIP_RUNTIME_PATCHES=1，但 $HOME/.dsh/profiles/*/package.json 里没有 dsh-android-fixes"
+    warn "  仍执行第 7/8 步：会话日志、附件与回车键都依赖它们，不能没人接管就跳过"
+  fi
+fi
+
 # ----------------------------------------------------- 7/9 Android 运行时兼容
 info "7/9 Android 运行时兼容补丁（flock / hardlink）"
+# 这个块刻意保持顶格：它的 <<'PY' 结束符必须从行首开始，缩进会直接破坏 Python。
+if [ "$SKIP_RUNTIME_PATCHES" = 1 ]; then
+  warn "  已跳过（由 dsh-android-fixes 插件持有这些补丁）"
+else
 python3 - "$DSH_DIR" <<'PY'
 import io, os, sys
 
@@ -242,6 +272,7 @@ for f in "$DSH_DIR/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/i
   node --check "$f" || die "语法校验失败: $f"
 done
 ok "  兼容补丁完成并通过语法校验"
+fi
 
 # ------------------------------------------------------- 8/9 回车键行为补丁
 # Android 输入法没有 Shift+Enter；0.2.x 默认"普通回车=发送"，中文输入法/软键盘想换行就
@@ -252,7 +283,9 @@ ok "  兼容补丁完成并通过语法校验"
 # 发送改走界面发送按钮（onPrimary → keyboard.submit(..., "click")）或外接键盘 Ctrl/Cmd+Enter。
 info "8/9 回车键行为补丁（普通回车=换行）"
 CONV="$DSH_DIR/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js"
-if [ ! -f "$CONV" ]; then
+if [ "$SKIP_RUNTIME_PATCHES" = 1 ]; then
+  warn "  已跳过（由 dsh-android-fixes 插件的 composer-enter 项持有）"
+elif [ ! -f "$CONV" ]; then
   warn "  未找到会话客户端 bundle，跳过"
 else
   python3 - "$CONV" <<'PY'
