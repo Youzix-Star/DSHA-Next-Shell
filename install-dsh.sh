@@ -2,8 +2,8 @@
 # =============================================================================
 # DSH 最简安装脚本 — Android / Termux
 # -----------------------------------------------------------------------------
-# 只安装原版 @deepseek-ai/dsh，不含任何功能改动：不打前端/回车补丁、不写启动停止
-# 脚本、不做移动端适配、不切镜像源、不加 JS 性能补丁。
+# 只安装原版 @deepseek-ai/dsh：不做移动端/前端适配、不写启动停止脚本、不切镜像源、
+# 不加 JS 性能补丁。唯一一处有意的行为改动是第 8 步的回车键（Android 输入法适配）。
 #
 # 只保留「让原版在 Android 上装得下、起得来、跑得动一轮」的必需步骤：
 #   1. 构建依赖（只补缺失，绝不 pkg update）
@@ -23,6 +23,8 @@
 #      7b. hardlink：Android/部分 ROM 禁 link(2)（会话日志、附件发布 EACCES）
 #          → 会话日志与 staged 附件用 rename；内容寻址的别名发布必须保留源对象，
 #            改用 COPYFILE_EXCL 而不是 rename（否则会删掉源对象）
+#   8. 回车键行为：普通回车=换行，Ctrl/Cmd+Enter 或界面发送按钮才发送；
+#      并给作曲区设 enterkeyhint=newline（Android 输入法没有 Shift+Enter）
 #
 # 用法：
 #   bash install-dsh.sh              # 装 latest
@@ -43,10 +45,10 @@ NPM_PREFIX="${DSH_PREFIX:-$PREFIX}"          # DSH_PREFIX 仅用于测试/自定
 DSH_DIR="$NPM_PREFIX/lib/node_modules/@deepseek-ai/dsh"
 WRAPPER="$NPM_PREFIX/bin/dsh"
 
-# --------------------------------------------------------------- 1/8 构建依赖
+# --------------------------------------------------------------- 1/9 构建依赖
 # 只补齐缺失的包，绝不执行 pkg update：只刷新索引再装个别包会造成 libc++ 半升级，
 # 把已装好的 cmake/clang 变成 "CANNOT LINK EXECUTABLE ... cannot locate symbol"。
-info "1/8 检查构建依赖"
+info "1/9 检查构建依赖"
 MISSING=()
 for p in cmake clang make binutils pkg-config python nodejs libandroid-spawn; do
   dpkg -s "$p" >/dev/null 2>&1 || MISSING+=("$p")
@@ -60,8 +62,8 @@ fi
 cmake --version >/dev/null 2>&1 || die "cmake 无法运行（Termux 半升级常见故障）。请先执行 pkg upgrade 修好工具链，再重跑本脚本。"
 ok "  node $(node -v) / npm $(npm -v)"
 
-# --------------------------------------------------- 2/8 node-gyp headers 补丁
-info "2/8 准备 node-gyp headers（node-pty 构建需要，约 1 分钟）"
+# --------------------------------------------------- 2/9 node-gyp headers 补丁
+info "2/9 准备 node-gyp headers（node-pty 构建需要，约 1 分钟）"
 timeout 300 npx --yes node-gyp install >/dev/null 2>&1 || warn "node-gyp install 未完成，继续"
 NODE_VER="$(node -v | sed 's/^v//')"
 GYP="$HOME/.cache/node-gyp/$NODE_VER/include/node/common.gypi"
@@ -79,8 +81,8 @@ else
   warn "  未找到 $GYP，node-pty 可能编译失败"
 fi
 
-# ------------------------------------------------------------------- 3/8 安装
-info "3/8 安装 $PKG（含原生编译，约 2~10 分钟，请勿中断）"
+# ------------------------------------------------------------------- 3/9 安装
+info "3/9 安装 $PKG（含原生编译，约 2~10 分钟，请勿中断）"
 CFLAGS="-target aarch64-linux-android30" CXXFLAGS="-target aarch64-linux-android30" \
   npm install -g --prefix "$NPM_PREFIX" \
   --allow-scripts=@deepseek-ai/dsh-subprocess-local,koffi,node-pty,@google/genai,protobufjs \
@@ -88,8 +90,8 @@ CFLAGS="-target aarch64-linux-android30" CXXFLAGS="-target aarch64-linux-android
 INSTALLED="$(node -p "require('$DSH_DIR/package.json').version")"
 ok "  已安装 @deepseek-ai/dsh@$INSTALLED"
 
-# ------------------------------------------------------------ 4/8 包装脚本
-info "4/8 生成 $WRAPPER"
+# ------------------------------------------------------------ 4/9 包装脚本
+info "4/9 生成 $WRAPPER"
 rm -f "$WRAPPER"
 cat > "$WRAPPER" <<EOF
 #!/data/data/com.termux/files/usr/bin/sh
@@ -98,8 +100,8 @@ EOF
 chmod +x "$WRAPPER"
 ok "  包装脚本就位（含 --expose-internals）"
 
-# -------------------------------------------------------- 5/8 原生 addon 兼容
-info "5/8 app-boot 原生 addon 兼容"
+# -------------------------------------------------------- 5/9 原生 addon 兼容
+info "5/9 app-boot 原生 addon 兼容"
 PATCHED=0
 for f in "$DSH_DIR/node_modules/@deepseek-ai/dsh-app-boot/lib/index.js" \
          "$DSH_DIR/node_modules/@deepseek-ai/dsh-app-boot/lib/worker/profile-resolution-bootstrap.js"; do
@@ -123,10 +125,10 @@ PY
 done
 [ "$PATCHED" = 1 ] && ok "  已改回 --expose-internals 路径" || ok "  该版本不依赖该 addon，无需处理"
 
-# ------------------------------------------------------- 6/8 sharp wasm 回退
+# ------------------------------------------------------- 6/9 sharp wasm 回退
 # android-arm64 没有 libvips 原生包，sharp 必然加载失败。0.1.x 里它是静态 import，
 # 失败会让插件树整体加载失败 → dsh 完全起不来；0.2.x 是惰性 require，只影响图片功能。
-info "6/8 sharp WebAssembly 回退"
+info "6/9 sharp WebAssembly 回退"
 SHARP_PKG="$DSH_DIR/node_modules/sharp"
 if [ ! -d "$SHARP_PKG" ]; then
   ok "  该版本无 sharp，跳过"
@@ -147,8 +149,8 @@ else
     || warn "  sharp 仍无法加载（图片/附件功能将不可用）"
 fi
 
-# ----------------------------------------------------- 7/8 Android 运行时兼容
-info "7/8 Android 运行时兼容补丁（flock / hardlink）"
+# ----------------------------------------------------- 7/9 Android 运行时兼容
+info "7/9 Android 运行时兼容补丁（flock / hardlink）"
 python3 - "$DSH_DIR" <<'PY'
 import io, os, sys
 
@@ -241,8 +243,63 @@ for f in "$DSH_DIR/node_modules/@deepseek-ai/dsh-session-persistence-jsonl/lib/i
 done
 ok "  兼容补丁完成并通过语法校验"
 
-# --------------------------------------------------------------------- 8/8 完成
-info "8/8 完成 🎉"
+# ------------------------------------------------------- 8/9 回车键行为补丁
+# Android 输入法没有 Shift+Enter；0.2.x 默认"普通回车=发送"，中文输入法/软键盘想换行就
+# 误发消息。官方设置项只覆盖"忙时回车"（queue/steer），没有"回车=换行"，只能改 bundle。
+# 两处改动（都在客户端 bundle 内，直接决定浏览器行为）：
+#   a. Enter 处理器：非 Ctrl/Cmd 的回车 return false，交给编辑器默认行为=换行
+#   b. 作曲区根节点设 enterkeyhint="newline"，让输入法把回车键显示成"换行"
+# 发送改走界面发送按钮（onPrimary → keyboard.submit(..., "click")）或外接键盘 Ctrl/Cmd+Enter。
+info "8/9 回车键行为补丁（普通回车=换行）"
+CONV="$DSH_DIR/node_modules/@deepseek-ai/dsh-client-ui-conversation/lib/client.js"
+if [ ! -f "$CONV" ]; then
+  warn "  未找到会话客户端 bundle，跳过"
+else
+  python3 - "$CONV" <<'PY'
+import io, sys
+p = sys.argv[1]
+lines = io.open(p, encoding='utf-8').read().split('\n')
+if any('dsh-android: 普通回车' in l for l in lines):
+    print("  已打过补丁"); sys.exit(0)
+
+# a) 在 arbitrate 块之后的 4-tab preventDefault 前插入（整行相等，避免子串误匹配）
+i = None
+for idx, l in enumerate(lines):
+    if (l == '\t\t\t\tevent?.preventDefault();' and idx >= 1 and lines[idx-1] == '\t\t\t\t}'
+            and idx+1 < len(lines) and lines[idx+1] == '\t\t\t\tif (event?.repeat === true) return true;'):
+        assert i is None, "锚点A不唯一"
+        i = idx
+if i is None:
+    print("  !! 未找到 Enter 处理器锚点，上游代码可能已变"); sys.exit(1)
+lines[i:i] = [
+ '\t\t\t\t/* dsh-android: 普通回车=换行（不发送），Ctrl/Cmd+Enter 或界面按钮才发送 */',
+ '\t\t\t\tif (event === null || !(event.ctrlKey === true || event.metaKey === true)) return false;',
+]
+
+# b) 在 rootElement = root; 之后设置输入法提示
+j = None
+for idx, l in enumerate(lines):
+    if l == '\t\t\t\trootElement = root;':
+        assert j is None, "锚点B不唯一"
+        j = idx
+if j is None:
+    print("  !! 未找到作曲区根监听锚点"); sys.exit(1)
+lines[j+1:j+1] = [
+ '\t\t\t\t/* dsh-android: 让输入法回车键显示“换行”而不是“发送” */',
+ '\t\t\t\troot?.setAttribute("enterkeyhint", "newline");',
+]
+
+io.open(p, 'w', encoding='utf-8').write('\n'.join(lines))
+print("  已修补 Enter 处理器 + enterkeyhint")
+PY
+  node --check "$CONV" || die "  会话客户端 bundle 语法校验失败"
+  node -e "const s=require('fs').readFileSync('$CONV','utf8');process.exit(s.includes('dsh-android: 普通回车')&&s.includes('enterkeyhint')?0:1)" \
+    || die "  补丁自检失败"
+  ok "  回车键补丁完成并通过校验"
+fi
+
+# --------------------------------------------------------------------- 9/9 完成
+info "9/9 完成 🎉"
 "$WRAPPER" --version
 node -e "require('$DSH_DIR/node_modules/sharp')" >/dev/null 2>&1 \
   && ok "sharp 可加载" || warn "sharp 不可加载（图片/附件功能受影响）"

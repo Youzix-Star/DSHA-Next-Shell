@@ -2,7 +2,8 @@
 
 在 Android / Termux 上安装**原版** [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)（`@deepseek-ai/dsh`）的最小安装脚本。
 
-不含任何功能改动：没有前端补丁、没有移动端适配、没有启动停止脚本、不改权限配置、不切镜像源。
+不含移动端/前端适配、启动停止脚本、权限配置写入或镜像切换。
+唯一一处有意的行为改动是**回车键**（Android 输入法没有 Shift+Enter，默认回车会误发消息）。
 
 ## 用法
 
@@ -21,6 +22,8 @@ dsh web
 
 浏览器打开日志里带 token 的地址（默认 `http://127.0.0.1:3080/?token=...`），API Key 在 Web UI 的 Models 页配置。
 
+> 回车键：**普通回车 = 换行**，发送请点界面上的发送按钮（或外接键盘 `Ctrl/Cmd+Enter`）。
+
 ## 它只做必要的 Android 兼容处理
 
 | 步骤 | 解决什么 |
@@ -31,6 +34,7 @@ dsh web
 | 重建 `dsh` 包装脚本 | npm 建的软链 shebang 是 `/usr/bin/env`，Android 无 `/usr`；且需 `--expose-internals` |
 | 原生 addon 兼容 | `node-addon-require-builtin` 无 android 预编译包、包内无 C++ 源码 |
 | sharp WebAssembly 回退 | android-arm64 无 libvips 原生包；0.1.x 里 sharp 是静态 import，加载失败会让整棵插件树加载失败 |
+| 回车键行为 | Android 输入法没有 Shift+Enter，默认「回车=发送」会误发消息；改为普通回车=换行，并设 `enterkeyhint=newline` 让输入法显示「换行」，发送走界面按钮 |
 | flock / hardlink 兼容 | 会话锁无 android 原生包 → 降级为无锁；Android 禁 `link(2)`，按各自语义改用 `rename` 或排他复制 |
 
 每一步的详细原因都写在 `install-dsh.sh` 的头部注释里。
